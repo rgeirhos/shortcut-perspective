@@ -1,4 +1,4 @@
-# Code & figures from "Shortcut Learning in Deep Neural Networks"
+# Figures & code from "Shortcut Learning in Deep Neural Networks"
 
 This repository contains code to reproduce the results from our toy example reported in the perspective article "Shortcut Learning in Deep Neural Networks" by Robert Geirhos, Jörn-Henrik Jacobsen, Claudio Michaelis, Richard Zemel, Wieland Brendel, Matthias Bethge & Felix A. Wichmann.
 
