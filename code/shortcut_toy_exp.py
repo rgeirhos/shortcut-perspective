@@ -19,7 +19,7 @@ from torch.autograd import Variable
 import sys
 import IPython
 import time
-
+import IPython.display as display
 
 
 # Dataset specification
@@ -32,150 +32,7 @@ lr = 0.0001
 bs = 100
 log_interval = 10
 
-# Setting up SEM
-## Train set
-x1_tr = torch.FloatTensor(n,1).normal_(mean=0,std=std)
-y_tr = x1_tr + torch.FloatTensor(n,1).normal_(mean=0,std=std)
-x2_tr = y_tr + torch.FloatTensor(n,1).normal_(mean=0,std=1)
-x_tr = torch.cat((x1_tr,x2_tr),1)
-## Test set (reversed spurious correlation)
-x1_te = torch.FloatTensor(n,1).normal_(mean=0,std=std)
-y_te = x1_te + torch.FloatTensor(n,1).normal_(mean=0,std=std)
-x2_te = - y_te  + torch.FloatTensor(n,1).normal_(mean=0,std=1)
-x_te = torch.cat((x1_te,x2_te),1)
-
-# Plot spurious correlations
-ax = plt.subplot(111)
-ax.scatter(x1_tr.numpy(),x2_tr.numpy(),color='black',s=1)
-#ax.scatter(x1_te.numpy(),x2_te.numpy(),color='green',s=1)
-ax.spines['right'].set_visible(False)
-ax.spines['top'].set_visible(False)
-ax.yaxis.set_ticks_position('left')
-ax.xaxis.set_ticks_position('bottom')
-
-# Plot causal dependency
-ax = plt.subplot(111)
-ax.scatter(x1_tr.numpy(),y_tr.numpy(),color='black',s=1)
-ax.scatter(x1_te.numpy(),y_te.numpy(),color='green',s=1)
-ax.spines['right'].set_visible(False)
-ax.spines['top'].set_visible(False)
-ax.yaxis.set_ticks_position('left')
-ax.xaxis.set_ticks_position('bottom')
-
-train_data = utils.TensorDataset(x_tr,y_tr) 
-train_loader = utils.DataLoader(train_data,batch_size=bs) 
-test_data = utils.TensorDataset(x_te,y_te) 
-test_loader = utils.DataLoader(test_data,batch_size=n)
-
-# Build FC net
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.fc1 = nn.Linear(dim*2, 200)
-        self.fc2 = nn.Linear(200, 200)
-        self.fc3 = nn.Linear(200, 1)
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-net = Net()
-optimizer = torch.optim.Adam(net.parameters(), lr=lr)
-criterion = nn.MSELoss()
-
-out = display(IPython.display.Pretty('Starting'), display_id=True)
-time.sleep(1)
-
-for epoch in range(epochs):
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = Variable(data), Variable(target)
-        data = data.view(-1, 2)
-        optimizer.zero_grad()
-        net_out = net(data)
-        loss = criterion(net_out, target)
-        loss.backward()
-        optimizer.step()
-        if batch_idx % log_interval == 0:
-            out.update(IPython.display.Pretty('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch+1, batch_idx * len(data), len(train_loader.dataset),
-                           bs * batch_idx / len(train_loader), loss.item())))
-            
-print('Train MSE: '+str(criterion(net_out,target).mean().item()))
-
-for idx, (data, target) in enumerate(test_loader):
-  data, target = Variable(data), Variable(target)
-  data = data.view(-1, 2)
-  optimizer.zero_grad()
-  net_out = net(data)
-  print('Test MSE: '+str(criterion(net_out,target).mean().item()))
-
-"""Outcome is as expected, model only looks at spurious correlation if easier and fails on test set, if spurious correlation is low, model succeeds on test set.
-
-To do: visualize stats to show model learns spurious correlations where it can, extend to "unfair Dsprites" dataset with convnet and use location and orientation in SEM setup.
-"""
-
-# Load Dsprites
-x = np.load('dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-ims = x['imgs']
-poses = x['latents_values']
-ids = x['latents_classes']
-
-plt.imshow(ims[10,:,:],cmap='gray')
-
-squares = []
-squares_positions = []
-hearts = []
-hearts_positions = []
-
-for i in range(len(poses)):
-  if poses[i][1] == 1.0 and poses[i][2] >= 0.8 and poses[i][3] == 0:
-      squares.append(ims[i,:,:])
-      squares_positions.append((poses[i][4],poses[i][5]))
-  elif poses[i][1] == 3.0 and poses[i][2] >= 0.8 and poses[i][3] == 0:
-      hearts.append(ims[i,:,:])
-      hearts_positions.append((poses[i][4],poses[i][5]))
-      
-squares = np.array(squares)
-squares_xy = squares_positions
-hearts = np.array(hearts)
-hearts_xy = hearts_positions
-
-## Use different subset indices for hearts and squares unbiased
-unbiased_data_idcs = np.arange(0,len(squares))
-np.random.shuffle(unbiased_data_idcs)
-unbiased_squares = unbiased_data_idcs[:(len(squares)//2)].copy()
-np.random.shuffle(unbiased_data_idcs)
-np.random.shuffle(unbiased_data_idcs)
-unbiased_hearts = unbiased_data_idcs[:(len(squares)//2)]
-
-biased_squares = []
-biased_hearts = []
-
-for i in range(len(squares)):
-  if squares_xy[i][0] < 0.5 and squares_xy[i][1] < 0.5:
-    biased_squares.append(i)
-  elif squares_xy[i][0] > 0.5 and squares_xy[i][1] > 0.5:
-    biased_squares.append(i)
-  if hearts_xy[i][0] > 0.5 and hearts_xy[i][1] < 0.5:
-    biased_hearts.append(i)
-  elif hearts_xy[i][0] < 0.5 and hearts_xy[i][1] > 0.5:
-    biased_hearts.append(i)
-    
-biased_squares = np.array(biased_squares)
-np.random.shuffle(biased_squares)
-biased_hearts = np.array(biased_hearts)
-np.random.shuffle(biased_hearts)
-
 from torchvision.utils import make_grid as make_grid
-
-some_unbiased_squares = squares[unbiased_squares[:25]]
-some_unbiased_hearts = hearts[unbiased_hearts[:25]]
-some_biased_squares = squares[biased_squares[:25]]
-some_biased_hearts = hearts[biased_hearts[:25]]
-
-pip install python-resize-image
-
 #from PIL import Image
 import requests
 from io import BytesIO
@@ -338,15 +195,12 @@ class ConvNet2(nn.Module):
         x = self.fc(x)
         return x
 
-net = Net().cuda()
+net = Net()
 optimizer = torch.optim.Adam(net.parameters(), lr=lr)
 #criterion = nn.MSELoss()     
 criterion = nn.CrossEntropyLoss()
 
 lr = 0.001
-out = display(IPython.display.Pretty('Starting'), display_id=True)
-time.sleep(1)
-import pdb
 
 epochs = 5
 
@@ -354,7 +208,8 @@ for epoch in range(epochs):
     total = 0.
     correct = 0.
     for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = Variable(data).cuda(), Variable(target).cuda()
+        #data, target = Variable(data).cuda(), Variable(target).cuda()
+        data, target = Variable(data), Variable(target)
         data = data.view(-1, 200*200)
         target = target.squeeze()
         optimizer.zero_grad()
@@ -363,9 +218,9 @@ for epoch in range(epochs):
         loss.backward()
         optimizer.step()
         if batch_idx % log_interval == 0:
-            out.update(IPython.display.Pretty('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     epoch+1, batch_idx * len(data), len(train_loader.dataset),
-                           bs * batch_idx / len(train_loader), loss.item())))
+                           bs * batch_idx / len(train_loader), loss.item()))
             
         _, predicted = torch.max(net_out.data, 1)
         total += target.size(0)
@@ -376,7 +231,8 @@ print('Train Acc: '+str(correct/total))
 total = 0.
 correct = 0.
 for idx, (data, target) in enumerate(test_loader):
-  data, target = Variable(data).cuda(), Variable(target).cuda()
+  #data, target = Variable(data).cuda(), Variable(target).cuda()
+  data, target = Variable(data), Variable(target)
   data = data.view(-1, 200*200)
   optimizer.zero_grad()
   net_out = net(data).squeeze()
@@ -385,21 +241,4 @@ for idx, (data, target) in enumerate(test_loader):
   correct += (predicted == target).sum().item()
 print('Test Acc: '+str(correct/total))
 
-
-
-unbiased_hearts = squares[unbiased_hearts]
-unbiased_hearts_means = np.mean(unbiased_hearts,axis=0)
-plt.imshow(unbiased_hearts_means,cmap='inferno')
-
-unbiased_squares = squares[unbiased_squares]
-unbiased_squares_means = np.mean(unbiased_squares,axis=0)
-plt.imshow(unbiased_squares_means,cmap='inferno')
-
-biased_hearts = squares[biased_hearts]
-biased_hearts_means = np.mean(biased_hearts,axis=0)
-plt.imshow(biased_hearts_means,cmap='inferno')
-
-biased_squares = squares[biased_squares]
-biased_squares_means = np.mean(biased_squares,axis=0)
-plt.imshow(biased_squares_means,cmap='inferno')
 
